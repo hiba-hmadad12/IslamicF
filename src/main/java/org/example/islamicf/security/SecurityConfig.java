@@ -8,8 +8,9 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity; // 👈 pour @PreAuthorize
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -23,6 +24,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity               // 👈 active @PreAuthorize dans tes services (ex: refresh ADMIN)
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -31,36 +33,42 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())                // REST stateless -> CSRF off
-                .cors(Customizer.withDefaults())             // CORS for Angular
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // pas de session
+                .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         // Preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // Public docs (si tu utilises Swagger)
+                        // (facultatif) Swagger
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 
                         // Auth public
                         .requestMatchers("/api/auth/register").permitAll()
-                        // si tu ajoutes un /api/auth/login (JWT), laisse-le public aussi
 
-                        // Public GET pour lister/voir les companies (facilite l’intégration Angular)
-                        .requestMatchers(HttpMethod.GET, "/api/companies/**").hasAnyRole("ADMIN", "USER")
+                        // -------- Screening endpoints --------
+                        // Liste des providers (OK publique)
+                        .requestMatchers(HttpMethod.GET, "/api/screening/providers").permitAll()
 
+                        // Lecture du dernier screening d'une company → protégé (ADMIN|USER)
+                        .requestMatchers(HttpMethod.GET, "/api/companies/*/screen").hasAnyRole("ADMIN","USER")
+
+                        // Refresh depuis un provider → réservé ADMIN
+                        .requestMatchers(HttpMethod.POST, "/api/companies/*/screen:refresh").hasRole("ADMIN")
+
+                        // -------- Companies CRUD --------
+                        .requestMatchers(HttpMethod.GET, "/api/companies/**").hasAnyRole("ADMIN","USER")
                         .requestMatchers(HttpMethod.POST, "/api/companies/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,  "/api/companies/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE,"/api/companies/**").hasRole("ADMIN")
 
-                        // Tout le reste -> authentifié
+                        // Toute autre requête doit être authentifiée
                         .anyRequest().authenticated()
                 )
-                // Pas de formLogin (c'était pour MVC). Pour SPA, on commence par HTTP Basic.
                 .httpBasic(Customizer.withDefaults());
 
-        // brancher UserDetailsService + BCrypt
+        // Auth provider (UserDetailsService + BCrypt)
         http.authenticationProvider(daoAuthProvider());
-
         return http.build();
     }
 
@@ -73,16 +81,14 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(); // prod-safe
-    }
+    public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
 
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
-    // CORS pour Angular dev
+    // CORS pour Angular
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();

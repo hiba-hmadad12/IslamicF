@@ -1,60 +1,50 @@
 package org.example.islamicf.services;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import org.example.islamicf.dto.ScreeningSnapshotDTO;
 import org.example.islamicf.entities.ScreeningSnapshot;
+import org.example.islamicf.mappers.ScreeningSnapshotMapper;
 import org.example.islamicf.repositories.ScreeningSnapshotRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ScreeningSnapshotServiceImpl implements ScreeningSnapshotService {
 
+    // ⚠️ le nom du champ doit exister et être identique ici et dans le code
     private final ScreeningSnapshotRepository snapshotRepository;
 
     @Override
-    public ScreeningSnapshot saveSnapshot(ScreeningSnapshot snapshot) {
-        return snapshotRepository.save(snapshot);
+    public List<ScreeningSnapshotDTO> getHistory(Long companyId) {
+        return snapshotRepository.findByCompany_IdOrderByFetchedAtDesc(companyId)
+                .stream().map(ScreeningSnapshotMapper::toDTO).toList();
     }
 
     @Override
-    public ScreeningSnapshot getSnapshotById(Long id) {
-        return snapshotRepository.findById(id).orElse(null);
+    public List<ScreeningSnapshotDTO> getHistoryBySource(Long companyId, String source) {
+        return snapshotRepository.findByCompany_IdAndSourceOrderByFetchedAtDesc(companyId, source)
+                .stream().map(ScreeningSnapshotMapper::toDTO).toList();
     }
 
     @Override
-    public void deleteSnapshotById(Long id) {
-        snapshotRepository.deleteById(id);
+    public ScreeningSnapshotDTO getLatest(Long companyId) {
+        return snapshotRepository.findFirstByCompany_IdOrderByFetchedAtDesc(companyId)
+                .map(ScreeningSnapshotMapper::toDTO)
+                .orElse(null);
     }
 
     @Override
-    public ScreeningSnapshot updateSnapshot(ScreeningSnapshot snapshot) {
-        return snapshotRepository.save(snapshot);
+    public ScreeningSnapshotDTO getLatestBySource(Long companyId, String source) {
+        return snapshotRepository.findFirstByCompany_IdAndSourceOrderByFetchedAtDesc(companyId, source)
+                .map(ScreeningSnapshotMapper::toDTO)
+                .orElse(null);
     }
 
     @Override
-    public List<ScreeningSnapshot> getAllSnapshots() {
-        return snapshotRepository.findAll();
-    }
-
-    @Override
-    public List<ScreeningSnapshot> getSnapshotsByCompanyId(Long companyId) {
-        return snapshotRepository.findByCompanyIdOrderByFetchedAtDesc(companyId);
-    }
-
-    @Override
-    public List<ScreeningSnapshot> getSnapshotsByCompanyIdAndSource(Long companyId, String source) {
-        return snapshotRepository.findByCompanyIdAndSourceOrderByFetchedAtDesc(companyId, source);
-    }
-
-    @Override
-    public ScreeningSnapshot getLatestSnapshotByCompanyId(Long companyId) {
-        return snapshotRepository.findFirstByCompanyIdOrderByFetchedAtDesc(companyId).orElse(null);
-    }
-
-    @Override
-    public ScreeningSnapshot getLatestSnapshotByCompanyIdAndSource(Long companyId, String source) {
-        return snapshotRepository.findFirstByCompanyIdAndSourceOrderByFetchedAtDesc(companyId, source).orElse(null);
+    public ScreeningSnapshotDTO saveSnapshot(ScreeningSnapshot snapshot) {
+        ScreeningSnapshot saved = snapshotRepository.save(snapshot);
+        return ScreeningSnapshotMapper.toDTO(saved);
     }
 }

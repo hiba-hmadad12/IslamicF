@@ -1,6 +1,7 @@
 package org.example.islamicf.entities;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -23,5 +24,6 @@ public class Company {
     private String country;
 
     @OneToMany(mappedBy = "company", fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<ScreeningSnapshot> snapshots;
 }

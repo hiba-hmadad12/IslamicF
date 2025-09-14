@@ -14,10 +14,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class DataInitializer {
 
     // You can override these via env or application.properties
-    @Value("${app.admin.email:admin@halal.com}")
+    @Value("${app.admin.email:admin1@halal.com}")
     private String adminEmail;
 
-    @Value("${app.admin.password:admin123}")
+    @Value("${app.admin.password:admin1123}")
     private String adminPassword;
 
     private final PasswordEncoder passwordEncoder;
@@ -26,19 +26,19 @@ public class DataInitializer {
     CommandLineRunner seedAdmin(UserRepository users) {
         return args -> {
             users.findByEmail(adminEmail).ifPresentOrElse(
-                    u -> { /* already exists -> do nothing */ },
+                    u -> {
+                        /* already exists -> do nothing */ },
                     () -> {
                         User admin = new User();
                         admin.setEmail(adminEmail);
                         admin.setPassword(passwordEncoder.encode(adminPassword)); // BCrypt
-                        admin.setRole("ADMIN");   // IMPORTANT: keep "ADMIN" (no "ROLE_" prefix in DB)
+                        admin.setRole("ADMIN"); // IMPORTANT: keep "ADMIN" (no "ROLE_" prefix in DB)
                         admin.setFirstName("Admin");
                         admin.setLastName("User");
                         admin.setEnabled(true);
                         users.save(admin);
                         System.out.println("✅ Seeded admin: " + adminEmail);
-                    }
-            );
+                    });
         };
     }
 }

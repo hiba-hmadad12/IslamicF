@@ -18,6 +18,9 @@ import org.springframework.web.client.RestClientResponseException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -59,6 +62,23 @@ public class ZoyaClient implements ScreeningClient {
         basicCompliance {
           report(symbol: $symbol) {
             symbol name exchange status reportDate purificationRatio
+          }
+        }
+      }
+      """;
+
+    private static final String ALL_COMPANIES_QUERY = """
+      query GetAllCompanies($input: BasicReportsInput) {
+        basicCompliance {
+          reports(input: $input) {
+            items {
+              symbol
+              name
+              exchange
+              status
+              reportDate
+            }
+            nextToken
           }
         }
       }
@@ -247,6 +267,133 @@ public class ZoyaClient implements ScreeningClient {
     private static String truncate(String s, int max) {
         if (s == null) return "null";
         return s.length() > max ? s.substring(0, max) + " …" : s;
+    }
+
+
+    public JsonNode fetchRawData(Company company, String apiKeyOverride) {
+        if (mock) {
+            try {
+                return om.readTree("{\"mock\":true,\"reason\":\"mock enabled\",\"company\":\"" + company.getSymbol() + "\"}");
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        final String key = (apiKeyOverride != null && !apiKeyOverride.isBlank()) ? apiKeyOverride : apiKey;
+        final String symbol = company.getSymbol();
+        log.info("Zoya raw call: mock={}, baseUrl={}, keyLen={}, company={}, symbol={}",
+                mock, baseUrl, (key == null ? 0 : key.length()), company.getId(), symbol);
+
+        try {
+
+            JsonNode root = callZoya(ADV_QUERY, Map.of("symbol", symbol), key);
+
+
+            if (hasGraphQLErrors(root)) {
+                log.warn("Zoya Advanced returned GraphQL errors → fallback Basic: {}", root.path("errors"));
+                root = callZoya(BASIC_QUERY, Map.of("symbol", symbol), key);
+            }
+
+            return root;
+        } catch (RestClientResponseException ex) {
+
+            log.warn("Zoya Advanced HTTP {} → fallback Basic", ex.getRawStatusCode());
+            try {
+                return callZoya(BASIC_QUERY, Map.of("symbol", symbol), key);
+            } catch (Exception e) {
+                log.error("Both Zoya queries failed: {}", e.getMessage());
+                return null;
+            }
+        } catch (Exception ex) {
+            log.error("Zoya GraphQL failed: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+
+    public JsonNode fetchAllCompanies(Integer limit, String nextToken, String apiKeyOverride) {
+        if (mock) {
+            // Create a simple mock response for testing
+            try {
+                return om.readTree("{\"mock\":true,\"reason\":\"mock enabled\",\"message\":\"All companies data\"}");
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        final String key = (apiKeyOverride != null && !apiKeyOverride.isBlank()) ? apiKeyOverride : apiKey;
+        log.info("Zoya fetchAllCompanies call: mock={}, baseUrl={}, keyLen={}, limit={}, hasNextToken={}",
+                mock, baseUrl, (key == null ? 0 : key.length()), limit, (nextToken != null));
+
+        try {
+
+            Map<String, Object> inputMap = new HashMap<>();
+            inputMap.put("limit", limit != null ? limit : 20);
+            inputMap.put("nextToken", nextToken);
+
+
+            JsonNode root = callZoya(ALL_COMPANIES_QUERY, Map.of("input", inputMap), key);
+
+
+            if (hasGraphQLErrors(root)) {
+                log.warn("Zoya fetchAllCompanies returned GraphQL errors: {}", root.path("errors"));
+                return null;
+            }
+
+            return root;
+        } catch (RestClientResponseException ex) {
+            log.error("Zoya fetchAllCompanies HTTP error: {} - {}", ex.getRawStatusCode(), ex.getMessage());
+            return null;
+        } catch (Exception ex) {
+            log.error("Zoya fetchAllCompanies failed: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+
+    public List<org.example.islamicf.dto.CompanyWithStatusDTO> fetchAndMapCompaniesWithStatus(Integer limit, String nextToken, String apiKeyOverride) {
+        // First get the raw JSON data
+        JsonNode rawData = fetchAllCompanies(limit, nextToken, apiKeyOverride);
+
+        if (rawData == null) {
+            log.error("Failed to fetch companies data from Zoya API");
+            return null;
+        }
+
+        // Extract the items array from the response
+        JsonNode items = rawData.path("data").path("basicCompliance").path("reports").path("items");
+        if (items.isMissingNode() || items.isNull() || !items.isArray()) {
+            log.warn("Zoya API response doesn't contain expected data structure");
+            return null;
+        }
+
+        // Map each item to a CompanyWithStatusDTO object
+        List<org.example.islamicf.dto.CompanyWithStatusDTO> companies = new ArrayList<>();
+        for (JsonNode item : items) {
+            String symbol = item.path("symbol").asText();
+            String name = item.path("name").asText();
+            String exchange = item.path("exchange").asText();
+            String zoyaStatus = item.path("status").asText("UNKNOWN");
+
+            // Normalize the status using the existing method
+            String normalizedStatus = normalizeStatus(zoyaStatus);
+
+            // Create a new Company object
+            Company company = Company.builder()
+                    .symbol(symbol)
+                    .name(name)
+                    .sector(exchange) // Using exchange as sector for now
+                    .country("Unknown") // Default country
+                    .build();
+
+            // Convert to CompanyWithStatusDTO and add the status
+            org.example.islamicf.dto.CompanyWithStatusDTO companyWithStatus = 
+                org.example.islamicf.dto.CompanyWithStatusDTO.from(company, normalizedStatus);
+            companies.add(companyWithStatus);
+        }
+
+        log.info("Successfully mapped {} companies from Zoya API with status", companies.size());
+        return companies;
     }
 
     // ==== Mock ================================================================

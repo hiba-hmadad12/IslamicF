@@ -46,6 +46,7 @@ public class SecurityConfig {
                         // Auth public
                         .requestMatchers("/api/auth/register").permitAll()
 
+                        .requestMatchers("/api/zoya/companies/**").permitAll()
                         // -------- Screening endpoints --------
                         // Liste des providers (OK publique)
                         .requestMatchers(HttpMethod.GET, "/api/screening/providers").permitAll()
@@ -93,9 +94,9 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
         cfg.setAllowCredentials(true);
-        cfg.setAllowedOrigins(List.of("http://localhost:4200"));
+        cfg.setAllowedOrigins(List.of("http://localhost:4200", "http://localhost:54675"));
         cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization","Content-Type"));
+        cfg.setAllowedHeaders(List.of("Authorization","Content-Type", "x-api-key"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;
